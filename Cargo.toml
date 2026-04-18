@@ -1,0 +1,38 @@
+[package]
+name = "payce-ng"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-web = "4"
+actix-rt = "2"
+serde = { version = "=1.0.226", features = ["derive"] }
+serde_json = "1.0.149"
+tokio = { version = "1", features = ["full"] }
+dotenv = "0.15"
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
+deadpool-postgres = "0.14"
+postgres-native-tls = "0.5"
+native-tls = "0.2"
+postgres-types = { version = "0.2", features = ["derive", "with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
+redis = { version = "0.27", features = ["tokio-comp"] }
+reqwest = { version = "0.12", features = ["json"] }
+solana-sdk = "1.18"
+bs58 = "0.5"
+aes-gcm = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+rand = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+log = "0.4"
+env_logger = "0.11"
+thiserror = "2"
+hex = "0.4.3"
+regex = "1"
+argon2 = "0.5"
+password-hash = "0.5"
+base64 = "0.22"
+bincode = "1"
+spl-associated-token-account = { version = "2.3", default-features = false }
+spl-token = "4.0"
