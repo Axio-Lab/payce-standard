@@ -2,3 +2,8 @@ target/
 .env
 *.log
 .DS_Store
+
+# AI session exports for grants (local only; may include PII from terminal logs)
+ai-assisted-development-session.jsonl
+claude-session.jsonl
+codex-session.jsonl
