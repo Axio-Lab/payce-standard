@@ -30,8 +30,8 @@ pub async fn send_resend_email(config: &AppConfig, to_email: &str, subject: &str
         subject,
         text,
     };
-    let client = reqwest::Client::new();
-    let res = client
+    let res = config
+        .http
         .post("https://api.resend.com/emails")
         .header("Authorization", format!("Bearer {key}"))
         .header("Content-Type", "application/json")

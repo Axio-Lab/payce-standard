@@ -1,4 +1,11 @@
+use std::sync::OnceLock;
+
 use regex::Regex;
+
+fn nigeria_phone_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^\+234[789]\d{9}$").expect("static regex"))
+}
 
 pub fn normalize_nigerian_phone(phone: &str) -> String {
     let cleaned: String = phone
@@ -21,8 +28,7 @@ pub fn normalize_nigerian_phone(phone: &str) -> String {
 
 pub fn is_valid_nigerian_phone(phone: &str) -> bool {
     let normalized = normalize_nigerian_phone(phone);
-    let re = Regex::new(r"^\+234[789]\d{9}$").unwrap();
-    re.is_match(&normalized)
+    nigeria_phone_regex().is_match(&normalized)
 }
 
 pub fn phone_digits_no_plus(phone: &str) -> String {
@@ -35,8 +41,6 @@ pub fn phone_local_nigeria_11_digits(phone: &str) -> String {
     let d = phone_digits_no_plus(phone);
     if d.starts_with("234") && d.len() == 13 {
         format!("0{}", &d[3..])
-    } else if d.starts_with('0') && d.len() == 11 {
-        d
     } else {
         d
     }

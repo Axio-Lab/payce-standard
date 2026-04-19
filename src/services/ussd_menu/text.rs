@@ -52,7 +52,7 @@ pub fn format_bookmaker_slug_for_display(slug: &str) -> String {
     if slug.is_empty() {
         return String::new();
     }
-    slug.split(|c| c == '-' || c == '_')
+    slug.split(['-', '_'])
         .filter(|s| !s.is_empty())
         .map(|segment| {
             let mut out = String::new();
@@ -73,29 +73,4 @@ pub fn format_bookmaker_slug_for_display(slug: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bookmaker_slug_title_case() {
-        assert_eq!(format_bookmaker_slug_for_display("supabet"), "Supabet");
-        assert_eq!(format_bookmaker_slug_for_display("1xbet"), "1Xbet");
-        assert_eq!(
-            format_bookmaker_slug_for_display("bet9ja-agent"),
-            "Bet9ja Agent"
-        );
-        assert_eq!(
-            format_bookmaker_slug_for_display("western-lotto"),
-            "Western Lotto"
-        );
-    }
-
-    #[test]
-    fn utility_provider_label_caps_disco() {
-        assert_eq!(format_utility_provider_label("EKEDC"), "EKEDC");
-        assert_eq!(format_utility_provider_label("ikedc"), "IKEDC");
-    }
 }

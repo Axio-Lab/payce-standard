@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::config::AppConfig;
 
@@ -23,6 +23,7 @@ pub async fn get_usd_to_ngn_rate(config: &AppConfig) -> f64 {
     }
 
     match fetch_rate(
+        &config.http,
         &config.exchange_rate_api_url,
         &config.exchange_rate_quote_currency,
     )
@@ -47,12 +48,12 @@ pub async fn get_usd_to_ngn_rate(config: &AppConfig) -> f64 {
     }
 }
 
-async fn fetch_rate(url: &str, quote_currency: &str) -> Result<f64, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let resp: serde_json::Value = client
+async fn fetch_rate(
+    http: &reqwest::Client,
+    url: &str,
+    quote_currency: &str,
+) -> Result<f64, String> {
+    let resp: serde_json::Value = http
         .get(url)
         .send()
         .await
@@ -104,7 +105,7 @@ pub fn format_ngn(amount: f64) -> String {
     let neg = amount < 0.0;
     let a = amount.abs();
     let cents = (a * 100.0).round() as u64;
-    let int_part = (cents / 100) as u64;
+    let int_part = cents / 100;
     let frac = (cents % 100) as u32;
     let body = if frac == 0 {
         format!("₦{}", insert_commas_u64(int_part))

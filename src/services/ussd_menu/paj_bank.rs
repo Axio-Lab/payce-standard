@@ -57,7 +57,7 @@ fn flow_key(user_id: &str) -> String {
     format!("ussd:paj_bank_flow:{user_id}")
 }
 
-fn is_nuban_10(s: &str) -> bool {
+pub fn is_nuban_10(s: &str) -> bool {
     s.len() == 10 && s.chars().all(|c| c.is_ascii_digit())
 }
 
@@ -450,17 +450,4 @@ async fn start_add_bank_flow(
         return format!("END Could not save session: {e}");
     }
     format_data_plan_menu_ussd_ex(&banks, 0, DATA_PLAN_PAGE_SIZE, "Withdrawal bank", false)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::is_nuban_10;
-
-    #[test]
-    fn nuban_accepts_ten_digits() {
-        assert!(is_nuban_10("0123456789"));
-        assert!(!is_nuban_10("012345678"));
-        assert!(!is_nuban_10("01234567890"));
-        assert!(!is_nuban_10("01234a6789"));
-    }
 }

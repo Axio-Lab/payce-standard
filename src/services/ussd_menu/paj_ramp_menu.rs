@@ -18,8 +18,6 @@ use crate::services::ussd_menu::text::{sanitize_ussd_ascii, truncate_ussd_label}
 use crate::services::ussd_menu::utility_catalog::{redis_delete_key, redis_load_json};
 use redis::AsyncCommands;
 
-const WRAPPED_SOL_MINT: &str = "So11111111111111111111111111111111111111112";
-
 const FLOW_TTL_SECS: u64 = 900;
 
 fn offramp_flow_key(user_id: &str) -> String {
@@ -131,13 +129,13 @@ fn mint_for_token_digit(config: &AppConfig, digit: &str) -> Option<String> {
             .iter()
             .find(|c| c.code.eq_ignore_ascii_case("USDG"))
             .map(|c| c.mint.to_string()),
-        "4" => Some(WRAPPED_SOL_MINT.to_string()),
+        "4" => Some(config.sol_mint.to_string()),
         _ => None,
     }
 }
 
-fn con_token_pick(title: &str) -> String {
-    format!("CON {title}\nPick token (mint sent to PAJ):\n1.USDC\n2.USDT\n3.USDG\n4.SOL\n0. Back")
+fn con_token_pick(title: &str, pick_line: &str) -> String {
+    format!("CON {title}\n\n{pick_line}\n1.USDC\n2.USDT\n3.USDG\n4.SOL\n0. Back")
 }
 
 fn format_paj_place_err_ussd(e: &str) -> String {
@@ -312,7 +310,7 @@ pub async fn handle_paj_onramp_ussd(
     let key = onramp_flow_key(user_id);
 
     match inputs.len() {
-        2 => con_token_pick("Buy token (PAJ onramp)"),
+        2 => con_token_pick("Buy token (PAJ onramp)", "Pick token to buy:"),
         3 => {
             let mint = match mint_for_token_digit(config, &inputs[2]) {
                 Some(m) => m,
@@ -450,7 +448,7 @@ pub async fn handle_paj_offramp_ussd(
     let key = offramp_flow_key(user_id);
 
     match inputs.len() {
-        2 => con_token_pick("Sell token (PAJ offramp)"),
+        2 => con_token_pick("Sell token (PAJ offramp)", "Pick token to sell:"),
         3 => {
             let mint = match mint_for_token_digit(config, &inputs[2]) {
                 Some(m) => m,

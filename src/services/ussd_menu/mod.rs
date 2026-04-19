@@ -2,6 +2,8 @@ mod account;
 mod balance;
 mod data_plans;
 mod defi;
+mod defi_earn;
+mod defi_swap;
 mod favorites;
 mod merchant_menu;
 mod nav;
@@ -15,6 +17,10 @@ mod send_money;
 mod text;
 mod utility;
 mod utility_catalog;
+
+pub use data_plans::{classify_data_plan_bucket, nonempty_bucket_menu, DataPlanBucket};
+pub use paj_bank::is_nuban_10;
+pub use text::{format_bookmaker_slug_for_display, format_utility_provider_label};
 
 use uuid::Uuid;
 
@@ -89,7 +95,8 @@ pub async fn handle_ussd_request(
     }
 
     if inputs.is_empty() {
-        return with_back_option("CON Welcome to Payce\n1. Send Money\n2. Check Balance\n3. Pay Merchant\n4. Favorites\n5. My Account\n6. Register as Merchant\n7. Pay Utility\n8. DeFi");
+        return "CON Welcome to Payce\n1. Send Money\n2. Check Balance\n3. Pay Merchant\n4. Favorites\n5. My Account\n6. Register as Merchant\n7. Pay Utility\n8. DeFi (powered by Jupiter)"
+            .to_string();
     }
 
     let result = match inputs[0].as_str() {

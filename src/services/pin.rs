@@ -144,7 +144,7 @@ pub async fn verify_pin(
         })?;
 
     if attempts >= config.max_pin_attempts {
-        conn.set_ex::<_, _, ()>(&lockout_key, "1", (config.lockout_minutes * 60) as u64)
+        conn.set_ex::<_, _, ()>(&lockout_key, "1", config.lockout_minutes * 60)
             .await
             .map_err(|e| {
                 log::error!("[PIN] Redis set lockout: {e}");

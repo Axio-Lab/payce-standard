@@ -1,15 +1,13 @@
 use actix_web::{web, HttpRequest, HttpResponse};
 use deadpool_postgres::Pool;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::config::AppConfig;
+use crate::middleware::auth::ct_eq_str;
 use crate::services::paj_notify::notify_paj_order_update;
-use crate::services::paj_orders::{
-    append_order_event, update_order_after_webhook, PajOrderDirection, PajOrderStatus,
-};
+use crate::services::paj_orders::{apply_webhook_atomic, PajOrderDirection, PajOrderStatus};
 use crate::services::paj_ramp::paj_is_configured;
 use crate::services::paj_ramp_place::place_paj_offramp_order;
 use crate::services::paj_ramp_place::place_paj_onramp_order;
@@ -24,7 +22,7 @@ fn check_internal_key(req: &HttpRequest, config: &AppConfig) -> bool {
     req.headers()
         .get("X-Payce-Key")
         .and_then(|v| v.to_str().ok())
-        .map(|s| s.trim() == key)
+        .map(|s| ct_eq_str(s.trim(), key))
         .unwrap_or(false)
 }
 
@@ -40,7 +38,7 @@ fn webhook_query_secret_ok(req: &HttpRequest, config: &AppConfig) -> bool {
                 let mut it = pair.splitn(2, '=');
                 let k = it.next().unwrap_or("");
                 let v = it.next().unwrap_or("");
-                if k == "k" && v == expected {
+                if k == "k" && ct_eq_str(v, expected) {
                     return true;
                 }
             }
@@ -59,21 +57,13 @@ fn extract_status_from_webhook(v: &Value) -> PajOrderStatus {
         "paymentStatus",
     ];
     for k in keys {
-        if let Some(s) = v.get(k).and_then(|x| try_str(x)) {
+        if let Some(s) = v.get(k).and_then(&try_str) {
             return s;
         }
-        if let Some(s) = v
-            .get("data")
-            .and_then(|d| d.get(k))
-            .and_then(|x| try_str(x))
-        {
+        if let Some(s) = v.get("data").and_then(|d| d.get(k)).and_then(&try_str) {
             return s;
         }
-        if let Some(s) = v
-            .get("order")
-            .and_then(|o| o.get(k))
-            .and_then(|x| try_str(x))
-        {
+        if let Some(s) = v.get("order").and_then(|o| o.get(k)).and_then(&try_str) {
             return s;
         }
     }
@@ -142,25 +132,25 @@ pub async fn paj_webhook(
     let ext_id = extract_paj_order_id_from_webhook(&payload);
 
     let st = status.clone();
-    let updated =
-        match update_order_after_webhook(&pool, order_id, st.clone(), ext_id.as_deref(), &payload)
-            .await
-        {
-            Ok(x) => x,
-            Err(e) => {
-                log::error!("[PAJ webhook] update: {e}");
-                return HttpResponse::InternalServerError()
-                    .json(serde_json::json!({ "ok": false }));
-            }
-        };
+    let updated = match apply_webhook_atomic(
+        &pool,
+        order_id,
+        st.clone(),
+        ext_id.as_deref(),
+        &payload,
+    )
+    .await
+    {
+        Ok(x) => x,
+        Err(e) => {
+            log::error!("[PAJ webhook] apply: {e}");
+            return HttpResponse::InternalServerError().json(serde_json::json!({ "ok": false }));
+        }
+    };
 
     if updated.is_none() {
         log::warn!("[PAJ webhook] unknown order_id={order_id}");
         return HttpResponse::NotFound().json(serde_json::json!({ "ok": false }));
-    }
-
-    if let Err(e) = append_order_event(&pool, order_id, &payload).await {
-        log::error!("[PAJ webhook] append event: {e}");
     }
 
     if let Some((user_id, dir_s)) = updated {
@@ -258,7 +248,7 @@ pub async fn paj_offramp(
             };
         }
     };
-    let http = Client::new();
+    let http = config.http.clone();
     let (order_id, paj_resp, settle_sig) = match place_paj_offramp_order(
         &pool,
         &rpc,
@@ -336,7 +326,7 @@ pub async fn paj_onramp(
             };
         }
     };
-    let http = Client::new();
+    let http = config.http.clone();
     let (order_id, paj_resp, _) = match place_paj_onramp_order(
         &pool,
         &rpc,

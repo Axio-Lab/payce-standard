@@ -3,12 +3,13 @@ use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
 use tokio_postgres::NoTls;
 
-pub fn create_pool(database_url: &str, ssl_mode: &str) -> Pool {
+pub fn create_pool(database_url: &str, ssl_mode: &str, max_size: usize) -> Pool {
     let mut cfg = Config::new();
     cfg.url = Some(database_url.to_string());
     cfg.manager = Some(ManagerConfig {
         recycling_method: RecyclingMethod::Fast,
     });
+    cfg.pool = Some(deadpool_postgres::PoolConfig::new(max_size));
 
     let mode = ssl_mode.trim().to_ascii_lowercase();
     match mode.as_str() {

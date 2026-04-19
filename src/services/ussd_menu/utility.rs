@@ -273,7 +273,7 @@ async fn handle_utility_data_plan_phase(
                     Err(e) => format!("END {}", e.user_message),
                 };
             }
-            return "END Too many entries after plan choice. Go back and pick again.".into();
+            "END Too many entries after plan choice. Go back and pick again.".into()
         }
     }
 }
@@ -530,7 +530,7 @@ async fn handle_utility_electricity(
         };
         let mut plans: Vec<InternetPlanItem> = Vec::new();
         for b in &validated {
-            let mut p = parse_elect_plans_for_disco(&list_json, elect_trim, *b);
+            let mut p = parse_elect_plans_for_disco(&list_json, elect_trim, b);
             if p.is_empty() {
                 p = parse_vendor_product_list(&list_json)
                     .into_iter()
@@ -596,12 +596,7 @@ async fn handle_utility_electricity(
     let elect_id = cat.elect_id.as_str();
     match nav {
         DataPlanNav::ShowMenu { page } => {
-            return format_data_plan_menu_ussd(
-                &cat.plans,
-                page,
-                DATA_PLAN_PAGE_SIZE,
-                "Pick a package",
-            );
+            format_data_plan_menu_ussd(&cat.plans, page, DATA_PLAN_PAGE_SIZE, "Pick a package")
         }
         DataPlanNav::Picked {
             plan_index,

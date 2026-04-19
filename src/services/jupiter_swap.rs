@@ -129,7 +129,7 @@ pub async fn run_swap(
     let taker = user_kp.pubkey().to_string();
     let order = jupiter_order(http, config, input_mint, output_mint, amount_raw, &taker).await?;
     let signed_b64 =
-        sign_jupiter_order_transaction(&order.transaction, user_kp, &*config.fee_payer)?;
+        sign_jupiter_order_transaction(&order.transaction, user_kp, &config.fee_payer)?;
     let exec = jupiter_execute(http, config, &signed_b64, &order.request_id).await?;
     if exec.status.eq_ignore_ascii_case("Success") {
         exec.signature

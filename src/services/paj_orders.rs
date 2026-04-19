@@ -1,6 +1,11 @@
 use deadpool_postgres::Pool;
-use serde_json::Value;
+use serde_json::{json, Value};
 use uuid::Uuid;
+
+use crate::services::user_activity::{
+    log_user_activity, patch_user_activity_by_ref, EVT_PAJ_OFFRAMP, EVT_PAJ_ONRAMP, ST_CONFIRMED,
+    ST_FAILED, ST_PENDING,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PajOrderDirection {
@@ -78,38 +83,50 @@ pub async fn insert_paj_order(
         )
         .await
         .map_err(|e| e.to_string())?;
+    let evt = match direction {
+        PajOrderDirection::Onramp => EVT_PAJ_ONRAMP,
+        PajOrderDirection::Offramp => EVT_PAJ_OFFRAMP,
+    };
+    log_user_activity(
+        pool,
+        &user_id.to_string(),
+        evt,
+        ST_PENDING,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(&id.to_string()),
+        json!({
+            "paj_order_id": paj_order_id,
+            "mint": mint,
+            "chain": chain,
+            "currency": currency,
+        }),
+    );
     Ok(())
 }
 
-pub async fn append_order_event(
-    pool: &Pool,
-    order_id: Uuid,
-    payload: &Value,
-) -> Result<(), String> {
-    let client = pool.get().await.map_err(|e| e.to_string())?;
-    client
-        .execute(
-            "INSERT INTO paj_order_events (order_id, payload) VALUES ($1, $2)",
-            &[&order_id, payload],
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-pub async fn update_order_after_webhook(
+pub async fn apply_webhook_atomic(
     pool: &Pool,
     order_id: Uuid,
     status: PajOrderStatus,
     paj_order_id: Option<&str>,
     last_payload: &Value,
 ) -> Result<Option<(Uuid, String)>, String> {
-    let client = pool.get().await.map_err(|e| e.to_string())?;
+    let mut client = pool.get().await.map_err(|e| e.to_string())?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|e| format!("begin tx: {e}"))?;
+
     let status_s = status.as_str();
-    let row = client
+    let row = tx
         .query_opt(
             "UPDATE paj_orders SET \
-                status = $2, \
+                status = CASE WHEN status IN ('success','failed') THEN status ELSE $2 END, \
                 paj_order_id = COALESCE(NULLIF(btrim($3), ''), paj_order_id), \
                 last_webhook_payload = $4, \
                 updated_at = NOW() \
@@ -118,8 +135,39 @@ pub async fn update_order_after_webhook(
             &[&order_id, &status_s, &paj_order_id, last_payload],
         )
         .await
-        .map_err(|e| e.to_string())?;
-    Ok(row.map(|r| (r.get::<_, Uuid>(0), r.get::<_, String>(1))))
+        .map_err(|e| format!("update paj_orders: {e}"))?;
+
+    let pair = row.map(|r| (r.get::<_, Uuid>(0), r.get::<_, String>(1)));
+
+    if pair.is_some() {
+        tx.execute(
+            "INSERT INTO paj_order_events (order_id, payload) VALUES ($1, $2)",
+            &[&order_id, last_payload],
+        )
+        .await
+        .map_err(|e| format!("insert paj_order_events: {e}"))?;
+    }
+
+    tx.commit().await.map_err(|e| format!("commit tx: {e}"))?;
+
+    if let Some((_uid, dir)) = &pair {
+        let evt = if dir == "onramp" {
+            EVT_PAJ_ONRAMP
+        } else {
+            EVT_PAJ_OFFRAMP
+        };
+        let ua_status = match status {
+            PajOrderStatus::Success => ST_CONFIRMED,
+            PajOrderStatus::Failed => ST_FAILED,
+            _ => ST_PENDING,
+        };
+        let patch = json!({
+            "paj_status": status_s,
+            "paj_order_id": paj_order_id,
+        });
+        patch_user_activity_by_ref(pool, &order_id.to_string(), evt, ua_status, None, patch);
+    }
+    Ok(pair)
 }
 
 pub async fn fetch_user_contact(

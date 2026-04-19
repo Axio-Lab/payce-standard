@@ -41,7 +41,7 @@ pub async fn create_spl_ata_for_owner_if_missing(
         &[&*config.fee_payer],
         blockhash,
     );
-    rpc.send_and_confirm_transaction(&tx).await?;
+    rpc.send_transaction(&tx).await?;
     Ok(())
 }
 

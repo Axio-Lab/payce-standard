@@ -19,7 +19,7 @@ pub struct UssdCallback {
     pub _service_code: Option<String>,
 }
 
-fn redact_text(text: &str) -> String {
+pub fn redact_text(text: &str) -> String {
     text.split('*')
         .map(|part| {
             if part.len() == 4 && part.chars().all(|c| c.is_ascii_digit()) {
@@ -80,9 +80,11 @@ pub async fn ussd_callback(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "__unknown_ip".into());
 
-    if is_phone_rate_limited(&redis, &phone_number, &config).await
-        || is_ip_rate_limited(&redis, &client_ip, &config).await
-    {
+    let (phone_limited, ip_limited) = tokio::join!(
+        is_phone_rate_limited(&redis, &phone_number, &config),
+        is_ip_rate_limited(&redis, &client_ip, &config),
+    );
+    if phone_limited || ip_limited {
         return HttpResponse::Ok()
             .content_type("text/plain")
             .body("END Too many requests. Please wait a moment.");

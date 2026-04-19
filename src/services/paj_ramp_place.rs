@@ -160,7 +160,7 @@ pub async fn place_paj_onramp_order(
     let req_json = serde_json::to_value(&body).map_err(|e| e.to_string())?;
     let paj_resp = create_onramp_order(http, config, session_token, body).await?;
     let resp_json = serde_json::to_value(&paj_resp).map_err(|e| e.to_string())?;
-    if let Err(e) = insert_paj_order(
+    insert_paj_order(
         pool,
         order_id,
         user_id,
@@ -172,9 +172,6 @@ pub async fn place_paj_onramp_order(
         &req_json,
         &resp_json,
     )
-    .await
-    {
-        return Err(e);
-    }
+    .await?;
     Ok((order_id, paj_resp, None))
 }

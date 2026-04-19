@@ -99,12 +99,12 @@ impl SolanaRpc {
         Hash::from_str(hash_str).map_err(|e| e.to_string())
     }
 
-    pub async fn send_and_confirm_transaction(&self, tx: &Transaction) -> Result<String, String> {
+    pub async fn send_transaction(&self, tx: &Transaction) -> Result<String, String> {
         let serialized = bincode::serialize(tx).map_err(|e| e.to_string())?;
         self.send_raw_transaction_b64(&serialized).await
     }
 
-    pub async fn send_and_confirm_versioned_transaction(
+    pub async fn send_versioned_transaction(
         &self,
         tx: &VersionedTransaction,
     ) -> Result<String, String> {

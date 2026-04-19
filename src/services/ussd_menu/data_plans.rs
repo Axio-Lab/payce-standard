@@ -150,7 +150,7 @@ pub fn format_data_plan_menu_body_ex(
     menu_title: &str,
     show_previous_page: bool,
 ) -> String {
-    let total_pages = std::cmp::max(1, (plans.len() + page_size - 1) / page_size);
+    let total_pages = std::cmp::max(1, plans.len().div_ceil(page_size));
     let start = page * page_size;
     let raw = if menu_title.trim().is_empty() {
         "Plans"
@@ -277,52 +277,4 @@ pub fn parse_data_plan_menu_input(
 ) -> Result<DataPlanNav, &'static str> {
     parse_data_plan_menu_input_with_page_ex(rest, plan_count, page_size, true)
         .map_err(|(msg, _)| msg)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::services::airbills::InternetPlanItem;
-
-    fn plan(label: &str, prod_id: &str) -> InternetPlanItem {
-        InternetPlanItem {
-            prod_id: prod_id.to_string(),
-            label: label.to_string(),
-            amount_ngn: Some(500.0),
-            batch: None,
-        }
-    }
-
-    #[test]
-    fn classify_monthly_from_30_days() {
-        assert_eq!(
-            classify_data_plan_bucket(&plan("1GB 30 Days", "p1")),
-            DataPlanBucket::Monthly
-        );
-    }
-
-    #[test]
-    fn classify_weekly_from_7_day() {
-        assert_eq!(
-            classify_data_plan_bucket(&plan("6GB 7 Days", "w")),
-            DataPlanBucket::Weekly
-        );
-    }
-
-    #[test]
-    fn classify_daily_from_1_day() {
-        assert_eq!(
-            classify_data_plan_bucket(&plan("350MB 1 Day", "d")),
-            DataPlanBucket::Daily
-        );
-    }
-
-    #[test]
-    fn nonempty_bucket_menu_skips_empty() {
-        let plans = vec![plan("Daily pack", "a"), plan("30 Days big", "b")];
-        let m = nonempty_bucket_menu(&plans);
-        assert_eq!(m.len(), 2);
-        assert!(m.contains(&DataPlanBucket::Daily));
-        assert!(m.contains(&DataPlanBucket::Monthly));
-    }
 }

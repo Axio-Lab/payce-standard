@@ -99,8 +99,8 @@ async fn vendor_get_query(
     query: &[(&str, &str)],
 ) -> Result<Value, AirbillsError> {
     let url = vendor_url(config, path);
-    let client = reqwest::Client::new();
-    let mut req = client
+    let mut req = config
+        .http
         .get(&url)
         .header("secretkey", &config.airbills_api_key)
         .header("Authorization", vendor_bearer_header(config))
@@ -153,8 +153,8 @@ async fn vendor_post_json(
     allow_statuses: &[&str],
 ) -> Result<Value, AirbillsError> {
     let url = vendor_url(config, path);
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = config
+        .http
         .post(&url)
         .header("secretkey", &config.airbills_api_key)
         .header("Authorization", vendor_bearer_header(config))
@@ -204,8 +204,8 @@ async fn vendor_post_json(
 
 pub async fn businesses_me(config: &AppConfig) -> Result<Value, AirbillsError> {
     let url = format!("{}/api/businesses/user/me", config.airbills_base_url);
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = config
+        .http
         .get(&url)
         .header(
             "Authorization",
@@ -779,156 +779,4 @@ pub async fn transact_process(
         "id": id,
     });
     vendor_post_json(config, "/transact/process", &body, &["06"]).await
-}
-
-#[cfg(test)]
-mod internet_plan_parse_tests {
-    use super::*;
-    #[test]
-    fn parses_array_of_objects() {
-        let v = json!({
-            "status": "00",
-            "data": [
-                {"prodId": "p1", "name": "1GB", "amount": 350},
-                {"product_code": 22, "title": "2GB", "price": "500"}
-            ]
-        });
-        let plans = parse_internet_plan_list(&v);
-        assert_eq!(plans.len(), 2);
-        assert_eq!(plans[0].prod_id, "p1");
-        assert_eq!(plans[0].amount_ngn, Some(350.0));
-        assert_eq!(plans[1].prod_id, "22");
-        assert_eq!(plans[1].amount_ngn, Some(500.0));
-    }
-
-    #[test]
-    fn parses_nested_plans_key() {
-        let v = json!({
-            "status": "00",
-            "data": { "plans": [{"id": "x", "description": "Combo", "cost": 1000}] }
-        });
-        let plans = parse_internet_plan_list(&v);
-        assert_eq!(plans.len(), 1);
-        assert_eq!(plans[0].prod_id, "x");
-        assert_eq!(plans[0].amount_ngn, Some(1000.0));
-    }
-
-    #[test]
-    fn parses_betting_providers_array() {
-        let v = json!({
-            "status": "00",
-            "data": {
-                "providers": [
-                    {"prodId": "bet9ja", "name": "Bet9ja"},
-                    {"productId": "sporty", "title": "SportyBet", "amount": 0}
-                ]
-            }
-        });
-        let plans = parse_internet_plan_list(&v);
-        assert_eq!(plans.len(), 2);
-        assert_eq!(plans[0].prod_id, "bet9ja");
-        assert_eq!(plans[0].label, "Bet9ja");
-        assert_eq!(plans[1].prod_id, "sporty");
-        assert_eq!(list_response_data_len(&v), 2);
-    }
-
-    #[test]
-    fn parses_cable_tv_nested_cabletv() {
-        let v = json!({
-            "status": "00",
-            "data": {
-                "CableTv": {
-                    "DSTV": [
-                        {"prodId": "dstv-padi", "prodName": "DStv Padi", "prodAmount": "4400.00"}
-                    ],
-                    "GOtv": [
-                        {"prodId": "gotv-lite", "prodName": "GOtv Lite", "prodAmount": "900"}
-                    ]
-                }
-            }
-        });
-        let plans = parse_cable_tv_list(&v);
-        assert_eq!(plans.len(), 2);
-        assert!(plans.iter().any(|p| p.prod_id == "dstv-padi"));
-        assert_eq!(plans[0].amount_ngn, Some(4400.0));
-        assert_eq!(list_response_data_len(&v), 2);
-    }
-
-    #[test]
-    fn parses_elect_disco_directory_buckets() {
-        let v = json!({
-            "status": "00",
-            "data": {
-                "EKEDC": [{"prodId": "p1"}],
-                "IKEDC": [{"prodId": "x"}],
-                "discount": "0.02"
-            }
-        });
-        let d = parse_elect_disco_directory(&v);
-        assert_eq!(d.len(), 2);
-        assert!(d.iter().any(|x| x.prod_id == "EKEDC"));
-        assert!(d.iter().any(|x| x.prod_id == "IKEDC"));
-    }
-
-    #[test]
-    fn parses_betting_company_array() {
-        let v = json!({
-            "status": "00",
-            "message": "Successful",
-            "data": {
-                "bettingCompany": [
-                    {"prodId": "naijabet"},
-                    {"prodId": "bet9ja-agent"},
-                    {"prodId": "betking"}
-                ],
-                "discount": "0.02"
-            }
-        });
-        let plans = parse_internet_plan_list(&v);
-        assert_eq!(plans.len(), 3);
-        assert_eq!(plans[0].prod_id, "naijabet");
-        assert_eq!(plans[0].label, "naijabet");
-        assert_eq!(plans[2].prod_id, "betking");
-        assert_eq!(list_response_data_len(&v), 3);
-    }
-
-    #[test]
-    fn parse_elect_plans_filters_by_disco_bucket() {
-        let v = json!({
-            "status": "00",
-            "data": {
-                "EKEDC": [
-                    {"prodId": "p99", "prodName": "Prepaid", "prodAmount": 5000}
-                ],
-                "IKEDC": [{"prodId": "x", "prodName": "Other", "prodAmount": 100}]
-            }
-        });
-        let p = parse_elect_plans_for_disco(&v, "EKEDC", "01");
-        assert_eq!(p.len(), 1);
-        assert_eq!(p[0].prod_id, "p99");
-        assert_eq!(p[0].batch.as_deref(), Some("01"));
-    }
-
-    #[test]
-    fn parses_data_plan_per_network_buckets() {
-        let v = json!({
-            "status": "00",
-            "data": {
-                "batch": "01",
-                "dataPlan": {
-                    "Airtel": [
-                        {"prodId": "499.91", "prodName": "1GB", "prodAmount": 530}
-                    ],
-                    "MTN": [{"prodId": "1", "prodName": "500MB", "prodAmount": 100}]
-                }
-            }
-        });
-        let all = parse_internet_plan_list(&v);
-        assert_eq!(all.len(), 2);
-        let airtel = parse_internet_plan_list_for_network(&v, "AIRTEL");
-        assert_eq!(airtel.len(), 1);
-        assert_eq!(airtel[0].prod_id, "499.91");
-        assert_eq!(airtel[0].label, "1GB");
-        assert_eq!(airtel[0].amount_ngn, Some(530.0));
-    }
 }

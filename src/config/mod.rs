@@ -1,7 +1,9 @@
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
+use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::utils::validation::{
     assert_public_https_url, assert_wallet_encryption_key, assert_wallet_master_seed,
@@ -25,6 +27,7 @@ pub struct AppConfig {
     pub solana_network: String,
     pub solana_explorer_base: String,
     pub usdc_mint: Pubkey,
+    pub sol_mint: Pubkey,
     pub stable_coins: Vec<StableCoinMint>,
     pub wallet_master_seed: String,
     pub wallet_encryption_key: String,
@@ -34,6 +37,7 @@ pub struct AppConfig {
     pub at_shortcode: Option<String>,
     pub at_messaging_url: String,
     pub at_callback_allowed_ips: Vec<String>,
+    pub trusted_proxy_ips: Vec<IpAddr>,
     pub exchange_rate_api_url: String,
     pub exchange_rate_cache_ttl_secs: u64,
     pub exchange_rate_fallback_ngn: f64,
@@ -51,8 +55,10 @@ pub struct AppConfig {
     pub airbills_api_key: String,
     pub jupiter_api_key: String,
     pub jupiter_swap_base_url: String,
+    pub jupiter_lend_base_url: String,
     pub jupiter_referral_account: String,
     pub jupiter_referral_fee_bps: u32,
+    pub payce_earn_fee_bps: u32,
     pub paj_api_key: String,
     pub paj_base_url: String,
     pub payce_public_base_url: String,
@@ -61,6 +67,8 @@ pub struct AppConfig {
     pub resend_api_key: String,
     pub resend_from: String,
     pub paj_ramp_business_usdc_fee: f64,
+    pub database_pool_max_size: usize,
+    pub http: reqwest::Client,
 }
 
 impl AppConfig {
@@ -103,6 +111,17 @@ impl AppConfig {
             "AT_CALLBACK_ALLOWED_IPS must list at least one IP (comma-separated)"
         );
 
+        let trusted_proxy_ips: Vec<IpAddr> = std::env::var("TRUSTED_PROXY_IPS")
+            .ok()
+            .map(|s| {
+                s.split(',')
+                    .map(|p| p.trim())
+                    .filter(|p| !p.is_empty())
+                    .filter_map(|p| p.parse::<IpAddr>().ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let usdc_mint = Pubkey::from_str(require_env("USDC_MINT_ADDRESS").trim())
             .expect("Invalid USDC_MINT_ADDRESS");
         let usdt_mint = Pubkey::from_str(require_env("USDT_MINT_ADDRESS").trim())
@@ -120,6 +139,19 @@ impl AppConfig {
         assert_ne!(
             usdt_mint, usdg_mint,
             "USDT_MINT_ADDRESS and USDG_MINT_ADDRESS must differ"
+        );
+        let sol_mint = Pubkey::from_str(require_env("SOL_MINT").trim()).expect("Invalid SOL_MINT");
+        assert_ne!(
+            sol_mint, usdc_mint,
+            "SOL_MINT and USDC_MINT_ADDRESS must differ"
+        );
+        assert_ne!(
+            sol_mint, usdt_mint,
+            "SOL_MINT and USDT_MINT_ADDRESS must differ"
+        );
+        assert_ne!(
+            sol_mint, usdg_mint,
+            "SOL_MINT and USDG_MINT_ADDRESS must differ"
         );
         let stable_coins = vec![
             StableCoinMint {
@@ -166,6 +198,18 @@ impl AppConfig {
         });
         let jupiter_referral_fee_bps: u32 = require_parse("JUPITER_REFERRAL_FEE_BPS");
 
+        let jupiter_lend_base_url_raw = require_env_nonempty_trim("JUPITER_LEND_BASE_URL");
+        let jupiter_lend_base_url = jupiter_lend_base_url_raw
+            .trim()
+            .trim_end_matches('/')
+            .to_string();
+        assert_public_https_url("JUPITER_LEND_BASE_URL", &jupiter_lend_base_url);
+
+        let payce_earn_fee_bps: u32 = std::env::var("PAYCE_EARN_FEE_BPS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(50);
+
         let paj_api_key = std::env::var("PAJ_API_KEY").unwrap_or_default();
         let paj_base_url_raw = std::env::var("PAJ_BASE_URL").unwrap_or_default();
         let paj_base_url = paj_base_url_raw.trim().trim_end_matches('/').to_string();
@@ -196,6 +240,30 @@ impl AppConfig {
             .filter(|v| *v >= 0.0 && v.is_finite())
             .unwrap_or(1.0);
 
+        let database_pool_max_size = std::env::var("DATABASE_POOL_MAX_SIZE")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .filter(|v| *v > 0 && *v <= 1024)
+            .unwrap_or(32);
+
+        let node_env_for_check = require_env("NODE_ENV");
+        if node_env_for_check == "production" && paj_webhook_secret.trim().is_empty() {
+            panic!(
+                "PAJ_WEBHOOK_SECRET is required in production (NODE_ENV=production). \
+                 Set it to a long random value and configure PAJ to call /api/paj/webhooks/<id>?k=<secret>."
+            );
+        }
+
+        let http = reqwest::Client::builder()
+            .user_agent(concat!("payce-ng/", env!("CARGO_PKG_VERSION")))
+            .pool_idle_timeout(Duration::from_secs(90))
+            .pool_max_idle_per_host(32)
+            .tcp_keepalive(Duration::from_secs(60))
+            .timeout(Duration::from_secs(15))
+            .connect_timeout(Duration::from_secs(5))
+            .build()
+            .expect("failed to build shared reqwest::Client");
+
         Self {
             port: require_parse("PORT"),
             host: require_env("HOST"),
@@ -207,6 +275,7 @@ impl AppConfig {
             solana_network: require_env("SOLANA_NETWORK"),
             solana_explorer_base,
             usdc_mint,
+            sol_mint,
             stable_coins,
             wallet_master_seed,
             wallet_encryption_key,
@@ -216,6 +285,7 @@ impl AppConfig {
             at_shortcode: shortcode_from_env(),
             at_messaging_url,
             at_callback_allowed_ips,
+            trusted_proxy_ips,
             exchange_rate_api_url,
             exchange_rate_cache_ttl_secs: require_parse("EXCHANGE_RATE_CACHE_TTL_SECS"),
             exchange_rate_fallback_ngn: require_parse("EXCHANGE_RATE_FALLBACK_NGN"),
@@ -233,8 +303,10 @@ impl AppConfig {
             airbills_api_key,
             jupiter_api_key,
             jupiter_swap_base_url,
+            jupiter_lend_base_url,
             jupiter_referral_account,
             jupiter_referral_fee_bps,
+            payce_earn_fee_bps,
             paj_api_key,
             paj_base_url,
             payce_public_base_url,
@@ -243,6 +315,8 @@ impl AppConfig {
             resend_api_key,
             resend_from,
             paj_ramp_business_usdc_fee,
+            database_pool_max_size,
+            http,
         }
     }
 

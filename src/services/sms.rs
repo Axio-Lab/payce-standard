@@ -53,8 +53,8 @@ fn log_at_recipient_statuses(body: &str) {
 }
 
 pub async fn send_sms(config: &AppConfig, to: &str, message: &str) {
-    let client = reqwest::Client::new();
-    let result = client
+    let result = config
+        .http
         .post(&config.at_messaging_url)
         .header("apiKey", &config.at_api_key)
         .header("Accept", "application/json")

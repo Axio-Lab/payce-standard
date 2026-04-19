@@ -16,6 +16,10 @@ use crate::services::exchange_rate::{
 use crate::services::merchant::get_merchant_by_code;
 use crate::services::sms::*;
 use crate::services::solana_rpc::{derive_associated_token_address, SolanaRpc};
+use crate::services::user_activity::{
+    log_user_activity, EVT_EXTERNAL_SEND, EVT_MERCHANT_PAYMENT, EVT_P2P_SEND, ST_CONFIRMED,
+    ST_FAILED,
+};
 use crate::services::wallet::{
     get_keypair_for_user, get_native_sol_balance, get_spl_token_balance,
 };
@@ -114,7 +118,11 @@ pub(crate) async fn check_daily_limit(
              + COALESCE((
                 SELECT SUM(amount_ngn) FROM utility_bill_orders \
                  WHERE user_id = $1 AND created_at >= $2 \
-                   AND status IN ('PENDING','ONCHAIN_SUBMITTED','PROCESSING','COMPLETED')), 0)",
+                   AND status IN ('PENDING','ONCHAIN_SUBMITTED','PROCESSING','COMPLETED')), 0) \
+             + COALESCE((
+                SELECT SUM(amount_ngn) FROM user_activity \
+                 WHERE user_id = $1 AND status = 'CONFIRMED' AND created_at >= $2 \
+                   AND event_type IN ('P2P_SEND', 'EXTERNAL_SEND')), 0)",
             &[&uid, &today_start],
         )
         .await
@@ -206,7 +214,82 @@ async fn execute_gasless_transfer(
         blockhash,
     );
 
-    rpc.send_and_confirm_transaction(&tx).await
+    rpc.send_transaction(&tx).await
+}
+
+pub async fn transfer_user_spl_to_owner_with_gas(
+    rpc: &SolanaRpc,
+    config: &AppConfig,
+    user_keypair: &solana_sdk::signature::Keypair,
+    mint: &Pubkey,
+    recipient_owner: &Pubkey,
+    amount_smallest: u64,
+    mint_decimals: u8,
+) -> Result<String, String> {
+    let user_pk = user_keypair.pubkey();
+    let fee_payer_pk = config.fee_payer.pubkey();
+
+    let user_ata = derive_associated_token_address(&user_pk, mint);
+    let recipient_ata = derive_associated_token_address(recipient_owner, mint);
+    let fee_payer_ata = derive_associated_token_address(&fee_payer_pk, mint);
+
+    let mut ixs: Vec<Instruction> = Vec::new();
+    if !rpc.account_exists(&user_ata).await {
+        ixs.push(create_associated_token_account(
+            &fee_payer_pk,
+            &user_pk,
+            mint,
+            &spl_token::id(),
+        ));
+    }
+    if !rpc.account_exists(&recipient_ata).await {
+        ixs.push(create_associated_token_account(
+            &fee_payer_pk,
+            recipient_owner,
+            mint,
+            &spl_token::id(),
+        ));
+    }
+    if !rpc.account_exists(&fee_payer_ata).await {
+        ixs.push(create_associated_token_account(
+            &fee_payer_pk,
+            &fee_payer_pk,
+            mint,
+            &spl_token::id(),
+        ));
+    }
+
+    ixs.push(build_spl_transfer_ix(
+        &user_ata,
+        mint,
+        &recipient_ata,
+        &user_pk,
+        amount_smallest,
+        mint_decimals,
+    ));
+
+    ixs.push(build_spl_transfer_ix(
+        &user_ata,
+        mint,
+        &fee_payer_ata,
+        &user_pk,
+        config.gas_fee_usdc,
+        mint_decimals,
+    ));
+
+    let blockhash = rpc
+        .get_latest_blockhash()
+        .await
+        .map_err(|_| "Network error. Please try again.".to_string())?;
+
+    let tx = SolTx::new_signed_with_payer(
+        &ixs,
+        Some(&fee_payer_pk),
+        &[&*config.fee_payer, user_keypair],
+        blockhash,
+    );
+
+    rpc.send_transaction(&tx).await
 }
 
 pub async fn transfer_p2p(
@@ -257,7 +340,7 @@ pub async fn transfer_p2p(
         }
         None => return TransferResult::fail("Sender wallet not set up"),
     };
-    let (_recipient_id, recipient_pubkey) = match recipient_row {
+    let (recipient_id, recipient_pubkey) = match recipient_row {
         Some(row) => {
             let id: String = row.get(0);
             let pk: Option<String> = row.get(1);
@@ -348,6 +431,23 @@ pub async fn transfer_p2p(
         )
         .await;
     });
+    log_user_activity(
+        pool,
+        &sender_id,
+        EVT_P2P_SEND,
+        ST_CONFIRMED,
+        Some(&sig),
+        i64::try_from(amount_smallest).ok(),
+        Some(&mint.to_string()),
+        Some(amount_ngn),
+        Some(rate),
+        Some(&recipient_id),
+        None,
+        serde_json::json!({
+            "stable_code": stable_code,
+            "recipient_phone": mask_phone(recipient_phone),
+        }),
+    );
     TransferResult::ok(sig)
 }
 
@@ -469,6 +569,24 @@ pub async fn transfer_to_address(
         )
         .await;
     });
+    log_user_activity(
+        pool,
+        &sender_id,
+        EVT_EXTERNAL_SEND,
+        ST_CONFIRMED,
+        Some(&sig),
+        i64::try_from(amount_smallest).ok(),
+        Some(&mint.to_string()),
+        Some(amount_ngn),
+        Some(rate),
+        None,
+        None,
+        serde_json::json!({
+            "stable_code": stable_code,
+            "recipient_address": recipient_address,
+            "label": label,
+        }),
+    );
     TransferResult::ok(sig)
 }
 
@@ -615,6 +733,23 @@ pub async fn pay_merchant(
                     &[&tx_id, &e],
                 )
                 .await;
+            log_user_activity(
+                pool,
+                &customer_id,
+                EVT_MERCHANT_PAYMENT,
+                ST_FAILED,
+                None,
+                i64::try_from(amount_smallest).ok(),
+                Some(&mint.to_string()),
+                Some(amount_ngn),
+                Some(rate),
+                Some(&merchant_user_id),
+                Some(&tx_id.to_string()),
+                serde_json::json!({
+                    "merchant_code": merchant_code,
+                    "error": e,
+                }),
+            );
             log::error!("[Transfer] Merchant payment failed: {e}");
             return TransferResult::fail("Payment failed. Please try again.");
         }
@@ -626,6 +761,23 @@ pub async fn pay_merchant(
             &[&tx_id, &sig],
         )
         .await;
+    log_user_activity(
+        pool,
+        &customer_id,
+        EVT_MERCHANT_PAYMENT,
+        ST_CONFIRMED,
+        Some(&sig),
+        i64::try_from(amount_smallest).ok(),
+        Some(&mint.to_string()),
+        Some(amount_ngn),
+        Some(rate),
+        Some(&merchant_user_id),
+        Some(&tx_id.to_string()),
+        serde_json::json!({
+            "merchant_code": merchant_code,
+            "merchant_id": merchant_id,
+        }),
+    );
 
     let stable_rows = stable_balances_for_summary(rpc, config, &customer_pubkey).await;
     let new_sol = get_native_sol_balance(rpc, &customer_pubkey).await;
@@ -669,13 +821,9 @@ pub async fn pay_merchant(
     TransferResult::ok(sig)
 }
 
-const WRAPPED_SOL_MINT: &str = "So11111111111111111111111111111111111111112";
-
 pub fn paj_offramp_spl_decimals(config: &AppConfig, mint: &Pubkey) -> u8 {
-    if let Ok(ws) = Pubkey::from_str(WRAPPED_SOL_MINT) {
-        if *mint == ws {
-            return 9;
-        }
+    if *mint == config.sol_mint {
+        return 9;
     }
     if config.stable_coins.iter().any(|s| s.mint == *mint) {
         return 6;
@@ -764,7 +912,7 @@ async fn execute_offramp_spl_deposit_with_gas(
         blockhash,
     );
 
-    rpc.send_and_confirm_transaction(&tx).await
+    rpc.send_transaction(&tx).await
 }
 
 pub async fn settle_paj_offramp_user_deposit(

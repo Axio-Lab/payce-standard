@@ -12,6 +12,10 @@ use crate::services::airbills::{self, AirbillsError, TransactRequest};
 use crate::services::exchange_rate::{get_usd_to_ngn_rate, ngn_to_usd};
 use crate::services::solana_rpc::SolanaRpc;
 use crate::services::transfer::check_daily_limit;
+use crate::services::user_activity::{
+    log_user_activity, patch_user_activity_by_ref, EVT_UTILITY_BILL, ST_CONFIRMED, ST_FAILED,
+    ST_PENDING,
+};
 use crate::services::wallet::{get_keypair_for_user, get_spl_token_balance};
 use crate::utils::phone::{normalize_nigerian_phone, phone_local_nigeria_11_digits};
 
@@ -42,21 +46,20 @@ pub fn sign_versioned_transaction_with_keypairs(
     if vtx.signatures.len() < num {
         vtx.signatures.resize(num, Signature::default());
     }
-    for i in 0..num {
+    for (i, key) in keys.iter().enumerate().take(num) {
         if vtx.signatures[i] != Signature::default() {
             continue;
         }
-        let pk = keys[i];
-        let Some(kp) = keypairs.iter().find(|k| k.pubkey() == pk) else {
+        let Some(kp) = keypairs.iter().find(|k| k.pubkey() == *key) else {
             continue;
         };
         vtx.signatures[i] = kp.sign_message(&msg_bytes);
     }
-    for i in 0..num {
+    for (i, key) in keys.iter().enumerate().take(num) {
         if vtx.signatures[i] == Signature::default() {
             return Err(format!(
                 "Missing signature for signer position {} ({})",
-                i, keys[i]
+                i, key
             ));
         }
     }
@@ -111,7 +114,26 @@ async fn insert_order_pending(
         )
         .await
         .map_err(|e| e.to_string())?;
-    Ok(row.get(0))
+    let id: Uuid = row.get(0);
+    log_user_activity(
+        pool,
+        &user_uuid.to_string(),
+        EVT_UTILITY_BILL,
+        ST_PENDING,
+        None,
+        None,
+        None,
+        Some(amount_ngn),
+        Some(rate),
+        None,
+        Some(airbills_id),
+        json!({
+            "product_code": product_code,
+            "airbills_id": airbills_id,
+            "order_uuid": id,
+        }),
+    );
+    Ok(id)
 }
 
 async fn update_order_status(
@@ -130,6 +152,23 @@ async fn update_order_status(
         )
         .await
         .map_err(|e| e.to_string())?;
+    let ua_status = match status {
+        "COMPLETED" => ST_CONFIRMED,
+        "FAILED" => ST_FAILED,
+        _ => ST_PENDING,
+    };
+    let patch = json!({
+        "utility_status": status,
+        "error_message": err,
+    });
+    patch_user_activity_by_ref(
+        pool,
+        airbills_id,
+        EVT_UTILITY_BILL,
+        ua_status,
+        chain_sig,
+        patch,
+    );
     Ok(())
 }
 
@@ -145,21 +184,19 @@ async fn sign_send_process(
     let vtx = decode_transaction_ix_b64(transaction_ix_b64)?;
     let signers: Vec<&Keypair> = vec![user_kp, &*config.fee_payer];
     let signed = sign_versioned_transaction_with_keypairs(vtx, &signers)?;
-    let sig = rpc
-        .send_and_confirm_versioned_transaction(&signed)
-        .await
-        .map_err(|e| {
-            let _ = update_order_status(pool, airbills_id, "FAILED", None, Some(&e));
-            e
-        })?;
+    let sig = match rpc.send_versioned_transaction(&signed).await {
+        Ok(s) => s,
+        Err(e) => {
+            update_order_status(pool, airbills_id, "FAILED", None, Some(&e)).await?;
+            return Err(e);
+        }
+    };
     update_order_status(pool, airbills_id, "ONCHAIN_SUBMITTED", Some(&sig), None).await?;
-    airbills::transact_process(config, product_code, airbills_id)
-        .await
-        .map_err(|e: AirbillsError| {
-            let msg = e.to_string();
-            let _ = update_order_status(pool, airbills_id, "FAILED", Some(&sig), Some(&msg));
-            msg
-        })?;
+    if let Err(e) = airbills::transact_process(config, product_code, airbills_id).await {
+        let msg = e.to_string();
+        update_order_status(pool, airbills_id, "FAILED", Some(&sig), Some(&msg)).await?;
+        return Err(msg);
+    }
     update_order_status(pool, airbills_id, "COMPLETED", Some(&sig), None).await?;
     Ok(sig)
 }

@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 pub mod config;
 pub mod db;
 pub mod db_pool;
@@ -19,7 +21,11 @@ use crate::services::solana_rpc::SolanaRpc;
 pub async fn run() -> std::io::Result<()> {
     let config = AppConfig::from_env();
 
-    let pool = db_pool::create_pool(&config.database_url, &config.database_ssl);
+    let pool = db_pool::create_pool(
+        &config.database_url,
+        &config.database_ssl,
+        config.database_pool_max_size,
+    );
 
     if let Err(e) = db::run_startup_migrations(&pool).await {
         panic!("Failed to run startup migrations: {e}");
@@ -98,7 +104,7 @@ pub async fn run() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
-            .wrap(security_headers::secure_default_headers())
+            .wrap(security_headers::secure_default_headers(&config_data))
             .app_data(web::FormConfig::default().limit(16_384))
             .app_data(config_data.clone())
             .app_data(pool_data.clone())

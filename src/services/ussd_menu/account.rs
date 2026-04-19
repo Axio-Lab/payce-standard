@@ -1,4 +1,3 @@
-use reqwest::Client as HttpClient;
 use uuid::Uuid;
 
 use crate::config::AppConfig;
@@ -44,34 +43,34 @@ pub async fn handle_my_account(
     };
 
     if inputs.len() == 1 {
-        return "CON My Account\n1. View full wallet address\n2. Buy Token\n3. Sell Token\n4. Export private key\n5. Import private key\n6. Profile summary\n7. Withdrawal banks\n8. PAJ verification"
+        return "CON My Account\n1. View full wallet address\n2. Buy token with Naira\n3. Sell token for Naira\n4. Export private key\n5. Import private key\n6. Profile summary\n7. Withdrawal banks\n8. PAJ verification"
             .into();
     }
 
     match inputs[1].as_str() {
         "7" => {
-            let http = HttpClient::new();
+            let http = config.http.clone();
             return paj_bank::handle_withdrawal_banks_branch(
                 pool, redis, &http, config, user_id, inputs,
             )
             .await;
         }
         "8" => {
-            let http = HttpClient::new();
+            let http = config.http.clone();
             return paj_verify::handle_paj_verification_branch(
                 pool, redis, &http, config, user_id, phone, inputs,
             )
             .await;
         }
         "2" => {
-            let http = HttpClient::new();
+            let http = config.http.clone();
             return paj_ramp_menu::handle_paj_onramp_ussd(
                 pool, redis, &http, rpc, config, user_id, inputs,
             )
             .await;
         }
         "3" => {
-            let http = HttpClient::new();
+            let http = config.http.clone();
             return paj_ramp_menu::handle_paj_offramp_ussd(
                 pool, redis, &http, rpc, config, user_id, inputs,
             )
