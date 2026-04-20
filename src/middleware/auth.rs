@@ -18,6 +18,20 @@ pub fn validate_callback(req: &HttpRequest, config: &AppConfig) -> bool {
         }
     }
 
+    if !config.at_callback_url_key.is_empty() {
+        if let Some(provided) = req.query_string().split('&').find_map(|kv| {
+            let mut it = kv.splitn(2, '=');
+            match (it.next(), it.next()) {
+                (Some("key"), Some(v)) => Some(v),
+                _ => None,
+            }
+        }) {
+            if ct_eq_str(provided.trim(), config.at_callback_url_key.trim()) {
+                return true;
+            }
+        }
+    }
+
     let Some(client_ip) = client_ip(req, config) else {
         return false;
     };

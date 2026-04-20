@@ -36,6 +36,7 @@ pub struct AppConfig {
     pub at_shortcode: Option<String>,
     pub at_messaging_url: String,
     pub at_callback_allowed_ips: Vec<String>,
+    pub at_callback_url_key: String,
     pub trust_proxy_xff: bool,
     pub exchange_rate_api_url: String,
     pub exchange_rate_cache_ttl_secs: u64,
@@ -109,6 +110,14 @@ impl AppConfig {
             !at_callback_allowed_ips.is_empty(),
             "AT_CALLBACK_ALLOWED_IPS must list at least one IP (comma-separated)"
         );
+
+        // Optional shared secret accepted as `?key=…` on the AT callback URL.
+        // Lets AT (which only lets you set a URL, no custom headers) authenticate
+        // without relying on IP allowlists. Generate with `openssl rand -hex 32`.
+        let at_callback_url_key = std::env::var("AT_CALLBACK_URL_KEY")
+            .unwrap_or_default()
+            .trim()
+            .to_string();
 
         let trust_proxy_xff = std::env::var("TRUST_PROXY_XFF")
             .ok()
@@ -278,6 +287,7 @@ impl AppConfig {
             at_shortcode: shortcode_from_env(),
             at_messaging_url,
             at_callback_allowed_ips,
+            at_callback_url_key,
             trust_proxy_xff,
             exchange_rate_api_url,
             exchange_rate_cache_ttl_secs: require_parse("EXCHANGE_RATE_CACHE_TTL_SECS"),
