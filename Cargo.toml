@@ -2,7 +2,7 @@
 name = "payce-ng"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.81"
+rust-version = "1.88"
 description = "Open-standard USSD stablecoin payments infrastructure on Solana"
 repository = "https://github.com/Axio-Lab/payce"
 homepage = "https://github.com/Axio-Lab/payce"
