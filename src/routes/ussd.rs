@@ -78,10 +78,12 @@ pub async fn ussd_callback(
         .map(|ip| ip.to_string())
         .unwrap_or_else(|| "__unknown_ip".into());
 
-    let (phone_limited, ip_limited) = tokio::join!(
-        is_phone_rate_limited(&redis, &phone_number, &config),
-        is_ip_rate_limited(&redis, &client_ip, &config),
-    );
+    let phone_limited = is_phone_rate_limited(&redis, &phone_number, &config).await;
+    let ip_limited = if config.trust_proxy_xff {
+        false
+    } else {
+        is_ip_rate_limited(&redis, &client_ip, &config).await
+    };
     if phone_limited || ip_limited {
         return HttpResponse::Ok()
             .content_type("text/plain")
