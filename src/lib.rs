@@ -44,7 +44,7 @@ pub async fn run() -> std::io::Result<()> {
          ║    USSD + USDC Payments on Solana         ║\n\
          ╠═══════════════════════════════════════════╣\n\
          ║  Server:  http://{}                       ║\n\
-         ║  USSD:    POST /ussd/callback             ║\n\
+         ║  USSD:    POST /ussd/callback/{{secret}}  ║\n\
          ║  Health:  GET  /health                    ║\n\
          ║  Network: {:31}                           ║\n\
          ║  Fee payer: {}                            ║\n\
@@ -112,6 +112,12 @@ pub async fn run() -> std::io::Result<()> {
             .app_data(rpc_data.clone())
             .route("/", web::get().to(root))
             .route("/", web::post().to(routes::ussd::ussd_callback))
+            // Path-based callback secret (register this URL in Africa's Talking).
+            // Must be registered before the bare `/ussd/callback` route.
+            .route(
+                "/ussd/callback/{at_key}",
+                web::post().to(routes::ussd::ussd_callback),
+            )
             .route(
                 "/ussd/callback",
                 web::post().to(routes::ussd::ussd_callback),
