@@ -43,7 +43,7 @@ pub async fn handle_my_account(
     };
 
     if inputs.len() == 1 {
-        return "CON My Account\n1. View full wallet address\n2. Buy token with Naira\n3. Sell token for Naira\n4. Export private key\n5. Import private key\n6. Profile summary\n7. Withdrawal banks\n8. PAJ verification"
+        return "CON My Account\n1. View full wallet address\n2. Fund your Payce account\n3. Withdraw to your bank\n4. Export private key\n5. Import private key\n6. Profile summary\n7. Withdrawal banks\n8. PAJ verification"
             .into();
     }
 

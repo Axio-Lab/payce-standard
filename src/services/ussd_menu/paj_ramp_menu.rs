@@ -448,7 +448,7 @@ pub async fn handle_paj_offramp_ussd(
     let key = offramp_flow_key(user_id);
 
     match inputs.len() {
-        2 => con_token_pick("Sell token (PAJ offramp)", "Pick token to sell:"),
+        2 => con_token_pick("Withdraw to your bank (PAJ offramp)", "Pick token to sell:"),
         3 => {
             let mint = match mint_for_token_digit(config, &inputs[2]) {
                 Some(m) => m,
@@ -496,7 +496,7 @@ pub async fn handle_paj_offramp_ussd(
                 return format!("END Session error: {e}");
             }
             let mut lines: Vec<String> = vec![format!(
-                "CON Selling {}\nPick payout bank:",
+                "CON Withdrawing {}\nPick payout bank:",
                 truncate_ussd_label(token_label.as_str(), 10)
             )];
             for (i, a) in accounts.iter().take(8).enumerate() {
