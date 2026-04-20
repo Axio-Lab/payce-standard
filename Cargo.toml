@@ -23,7 +23,7 @@ deadpool-postgres = "0.14"
 postgres-native-tls = "0.5"
 native-tls = "0.2"
 postgres-types = { version = "0.2", features = ["derive", "with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
-redis = { version = "0.27", features = ["tokio-comp"] }
+redis = { version = "0.27", features = ["tokio-comp", "tls-native-tls", "tokio-native-tls-comp"] }
 reqwest = { version = "0.12", features = ["json", "gzip", "brotli"] }
 solana-sdk = "1.18"
 bs58 = "0.5"
