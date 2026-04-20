@@ -2,7 +2,7 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use serde::Deserialize;
 
 use crate::config::AppConfig;
-use crate::middleware::auth::validate_callback;
+use crate::middleware::auth::{client_ip, validate_callback};
 use crate::middleware::rate_limit::{is_ip_rate_limited, is_phone_rate_limited};
 use crate::services::solana_rpc::SolanaRpc;
 use crate::services::ussd_menu::handle_ussd_request;
@@ -74,10 +74,8 @@ pub async fn ussd_callback(
             .body("END Missing phoneNumber.");
     }
 
-    let client_ip = req
-        .peer_addr()
-        .map(|a| a.ip().to_string())
-        .filter(|s| !s.is_empty())
+    let client_ip = client_ip(&req, &config)
+        .map(|ip| ip.to_string())
         .unwrap_or_else(|| "__unknown_ip".into());
 
     let (phone_limited, ip_limited) = tokio::join!(

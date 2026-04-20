@@ -1,7 +1,4 @@
-use std::net::IpAddr;
-use std::str::FromStr;
-
-use payce_ng::middleware::auth::{ct_eq_str, resolve_client_ip};
+use payce_ng::middleware::auth::ct_eq_str;
 use payce_ng::routes::ussd::redact_text;
 use payce_ng::services::airbills::{
     list_response_data_len, parse_cable_tv_list, parse_elect_disco_directory,
@@ -22,22 +19,6 @@ fn ct_eq_matches_and_mismatches() {
     assert!(ct_eq_str("abc123", "abc123"));
     assert!(!ct_eq_str("abc123", "abc124"));
     assert!(!ct_eq_str("short", "longer"));
-}
-
-#[test]
-fn resolve_client_ip_uses_xff_only_for_trusted_proxy() {
-    let peer = IpAddr::from_str("10.0.0.1").expect("ip");
-    let trusted = vec![peer];
-    let ip = resolve_client_ip(peer, Some("203.0.113.5, 10.0.0.1"), &trusted);
-    assert_eq!(ip.to_string(), "203.0.113.5");
-}
-
-#[test]
-fn resolve_client_ip_ignores_xff_for_untrusted_peer() {
-    let peer = IpAddr::from_str("10.0.0.9").expect("ip");
-    let trusted = vec![IpAddr::from_str("10.0.0.1").expect("ip")];
-    let ip = resolve_client_ip(peer, Some("203.0.113.5, 10.0.0.1"), &trusted);
-    assert_eq!(ip, peer);
 }
 
 #[test]

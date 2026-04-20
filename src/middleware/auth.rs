@@ -18,17 +18,9 @@ pub fn validate_callback(req: &HttpRequest, config: &AppConfig) -> bool {
         }
     }
 
-    let Some(peer_ip) = req.peer_addr().map(|a| a.ip()) else {
+    let Some(client_ip) = client_ip(req, config) else {
         return false;
     };
-
-    let client_ip = resolve_client_ip(
-        peer_ip,
-        req.headers()
-            .get("x-forwarded-for")
-            .and_then(|v| v.to_str().ok()),
-        &config.trusted_proxy_ips,
-    );
 
     config
         .at_callback_allowed_ips
@@ -37,24 +29,25 @@ pub fn validate_callback(req: &HttpRequest, config: &AppConfig) -> bool {
         .any(|allowed| allowed == client_ip)
 }
 
+pub fn client_ip(req: &HttpRequest, config: &AppConfig) -> Option<IpAddr> {
+    let peer_ip = req.peer_addr().map(|a| a.ip());
+
+    if config.trust_proxy_xff {
+        let xff_first = req
+            .headers()
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.split(',').next())
+            .and_then(|s| s.trim().parse::<IpAddr>().ok());
+        xff_first.or(peer_ip)
+    } else {
+        peer_ip
+    }
+}
+
 pub fn ct_eq_str(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
     }
     a.as_bytes().ct_eq(b.as_bytes()).into()
-}
-
-pub fn resolve_client_ip(
-    peer_ip: IpAddr,
-    xff_header: Option<&str>,
-    trusted_proxy_ips: &[IpAddr],
-) -> IpAddr {
-    if trusted_proxy_ips.iter().any(|ip| ip == &peer_ip) {
-        xff_header
-            .and_then(|s| s.split(',').next())
-            .and_then(|s| s.trim().parse::<IpAddr>().ok())
-            .unwrap_or(peer_ip)
-    } else {
-        peer_ip
-    }
 }

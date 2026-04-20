@@ -1,6 +1,5 @@
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
-use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,7 +36,7 @@ pub struct AppConfig {
     pub at_shortcode: Option<String>,
     pub at_messaging_url: String,
     pub at_callback_allowed_ips: Vec<String>,
-    pub trusted_proxy_ips: Vec<IpAddr>,
+    pub trust_proxy_xff: bool,
     pub exchange_rate_api_url: String,
     pub exchange_rate_cache_ttl_secs: u64,
     pub exchange_rate_fallback_ngn: f64,
@@ -111,16 +110,10 @@ impl AppConfig {
             "AT_CALLBACK_ALLOWED_IPS must list at least one IP (comma-separated)"
         );
 
-        let trusted_proxy_ips: Vec<IpAddr> = std::env::var("TRUSTED_PROXY_IPS")
+        let trust_proxy_xff = std::env::var("TRUST_PROXY_XFF")
             .ok()
-            .map(|s| {
-                s.split(',')
-                    .map(|p| p.trim())
-                    .filter(|p| !p.is_empty())
-                    .filter_map(|p| p.parse::<IpAddr>().ok())
-                    .collect()
-            })
-            .unwrap_or_default();
+            .map(|s| matches!(s.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes"))
+            .unwrap_or(false);
 
         let usdc_mint = Pubkey::from_str(require_env("USDC_MINT_ADDRESS").trim())
             .expect("Invalid USDC_MINT_ADDRESS");
@@ -285,7 +278,7 @@ impl AppConfig {
             at_shortcode: shortcode_from_env(),
             at_messaging_url,
             at_callback_allowed_ips,
-            trusted_proxy_ips,
+            trust_proxy_xff,
             exchange_rate_api_url,
             exchange_rate_cache_ttl_secs: require_parse("EXCHANGE_RATE_CACHE_TTL_SECS"),
             exchange_rate_fallback_ngn: require_parse("EXCHANGE_RATE_FALLBACK_NGN"),
