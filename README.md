@@ -1,6 +1,8 @@
 # Payce Standard
 
-Open-standard USSD payments infrastructure on Solana. Built in Rust on top of Actix Web, Postgres, Redis, and Solana SDK.
+Open-standard USSD payments infrastructure on Solana.
+
+Built in Rust on top of Actix Web, Postgres, Redis, and Solana SDK.
 
 Payce Standard is the USSD callback server behind [Payce](https://payce.xyz). It bridges Africa's Talking USSD sessions to Solana stablecoin transfers, Jupiter swap & lend, PAJ on/off-ramps, merchant flows, and utility bill purchases.
 
