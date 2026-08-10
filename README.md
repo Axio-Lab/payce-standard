@@ -152,9 +152,6 @@ docker run --rm -p 3000:3000 --env-file .env payce-standard:dev
 
 For production, terminate TLS at a reverse proxy (Caddy, nginx, ALB) and set `TRUSTED_PROXY_IPS` to that proxy's IP. Always run with `DATABASE_SSL=require` against managed Postgres.
 
-## Contributing
-
-PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Please run `cargo fmt` and `cargo clippy --all-targets -- -D warnings` before opening a PR.
 
 ## License
 
